@@ -225,8 +225,7 @@ class GitServer:
                         },
                         "required": ["repo_name"]
                     }
-                )
-            ]
+                ),
                 Tool(
                     name="git_diff",
                     description="Show differences between commits, commit and working tree, etc.",
@@ -244,6 +243,7 @@ class GitServer:
                         "required": ["repo_name"]
                     }
                 )
+            ]
 
         @self.app.call_tool()
         async def call_tool(

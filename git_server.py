@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any
 from pathlib import Path
@@ -21,21 +22,82 @@ class GitServer:
         self.app = Server("git-server")
         self._setup_routes()
 
+    def _validate_repo_name(self, repo_name: str) -> None:
+        """
+        リポジトリ名のバリデーションを行う
+        
+        Args:
+            repo_name (str): 検証するリポジトリ名
+            
+        Raises:
+            ValueError: リポジトリ名が無効な場合
+        """
+        if not repo_name:
+            raise ValueError("Repository name cannot be empty")
+            
+        # 長さの制限（一般的なファイルシステムの制限を考慮）
+        if len(repo_name) > 255:
+            raise ValueError("Repository name is too long (max 255 characters)")
+            
+        # 基本的な文字のバリデーション
+        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9-_.]*$', repo_name):
+            raise ValueError("Repository name must start with alphanumeric character and can only contain alphanumeric characters, hyphens, underscores, and dots")
+            
+        # 危険な文字列のチェック
+        forbidden_patterns = ['..', '//', '\\\\', '.git', '.lock']
+        if any(pattern in repo_name for pattern in forbidden_patterns):
+            raise ValueError(f"Repository name contains forbidden pattern: {repo_name}")
+            
+        # 予約された名前のチェック
+        reserved_names = ['git', 'temp', 'tmp', 'aux', 'con', 'prn', 'nul', 'com1', 'com2', 'com3', 'com4', 'lpt1', 'lpt2', 'lpt3']
+        if repo_name.lower() in reserved_names:
+            raise ValueError(f"Repository name '{repo_name}' is reserved and cannot be used")
+            
+        # パスインジェクション対策
+        repo_path = Path(repo_name)
+        if '..' in repo_path.parts or '/' in repo_name or '\\' in repo_name:
+            raise ValueError("Repository name cannot contain path traversal characters")
+
+    def _check_repository_exists(self, repo_name: str) -> Path:
+        """
+        リポジトリの存在確認を行う
+        
+        Args:
+            repo_name (str): 確認するリポジトリ名
+            
+        Returns:
+            Path: リポジトリのパス
+            
+        Raises:
+            ValueError: リポジトリが存在しない場合
+        """
+        self._validate_repo_name(repo_name)
+        repo_path = self.repositories_dir / repo_name
+        if not repo_path.exists() or not (repo_path / ".git").exists():
+            raise ValueError(f"Repository not found: {repo_name}")
+        return repo_path
+
     def _setup_routes(self):
         @self.app.list_resources()
         async def list_resources() -> list[Resource]:
             resources = []
             for repo_path in self.repositories_dir.glob("*"):
                 if repo_path.is_dir() and (repo_path / ".git").exists():
-                    uri = AnyUrl(f"git://{repo_path.name}")
-                    resources.append(
-                        Resource(
-                            uri=uri,
-                            name=f"Git repository dir: {repo_path.absolute()}",
-                            mimeType="application/x-git",
-                            description=f"Local git repository at {repo_path}",
+                    try:
+                        repo_name = repo_path.name
+                        self._validate_repo_name(repo_name)
+                        uri = AnyUrl(f"git://{repo_name}")
+                        resources.append(
+                            Resource(
+                                uri=uri,
+                                name=f"Git repository dir: {repo_path.absolute()}",
+                                mimeType="application/x-git",
+                                description=f"Local git repository at {repo_path}",
+                            )
                         )
-                    )
+                    except ValueError as e:
+                        logger.warning(f"Skipping invalid repository: {str(e)}")
+                        continue
             return resources
 
         @self.app.read_resource()
@@ -44,10 +106,7 @@ class GitServer:
                 raise ValueError(f"Unknown resource: {uri}")
 
             repo_name = str(uri).split("://")[1]
-            repo_path = self.repositories_dir / repo_name
-
-            if not repo_path.exists() or not (repo_path / ".git").exists():
-                raise ValueError(f"Repository not found: {repo_name}")
+            repo_path = self._check_repository_exists(repo_name)
 
             try:
                 repo = Repo(repo_path)
@@ -174,12 +233,56 @@ class GitServer:
             name: str, arguments: Any
         ) -> list[TextContent | ImageContent | EmbeddedResource]:
             try:
+                if name == "create_repository":
+                    if not isinstance(arguments, dict) or "name" not in arguments:
+                        raise ValueError("Invalid repository creation arguments")
+                    
+                    repo_name = arguments["name"]
+                    self._validate_repo_name(repo_name)
+                    repo_path = self.repositories_dir / repo_name
+                    
+                    if repo_path.exists():
+                        raise ValueError(f"Repository already exists: {repo_name}")
+
+                    init_commit = arguments.get("init_commit", True)
+                    remote_url = arguments.get("remote_url")
+
+                    repo_path.mkdir(parents=True)
+                    repo = Repo.init(repo_path)
+
+                    if init_commit:
+                        # Create README.md
+                        readme_path = repo_path / "README.md"
+                        readme_path.write_text(
+                            f"# {repo_name}\n\nCreated on {datetime.now().isoformat()}"
+                        )
+
+                        # Initial commit
+                        repo.index.add(["README.md"])
+                        repo.index.commit("Initial commit")
+
+                    if remote_url:
+                        repo.create_remote("origin", remote_url)
+
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps(
+                                {
+                                    "status": "success",
+                                    "message": f"Repository '{repo_name}' created successfully",
+                                    "path": str(repo_path.absolute()),
+                                    "has_initial_commit": init_commit,
+                                    "remote_url": remote_url,
+                                },
+                                indent=2,
+                            ),
+                        )
+                    ]
+
+                # その他のGit操作の共通処理
                 repo_name = arguments["repo_name"]
-                repo_path = self.repositories_dir / repo_name
-
-                if not repo_path.exists() or not (repo_path / ".git").exists():
-                    raise ValueError(f"Repository not found: {repo_name}")
-
+                repo_path = self._check_repository_exists(repo_name)
                 repo = Repo(repo_path)
 
                 if name == "git_add":
@@ -253,48 +356,6 @@ class GitServer:
                                 },
                                 indent=2
                             )
-                        )
-                    ]
-
-                elif name == "create_repository":
-                    if not isinstance(arguments, dict) or "name" not in arguments:
-                        raise ValueError("Invalid repository creation arguments")
-                    if repo_path.exists():
-                        raise ValueError(f"Repository already exists: {repo_name}")
-
-                    init_commit = arguments.get("init_commit", True)
-                    remote_url = arguments.get("remote_url")
-
-                    repo_path.mkdir(parents=True)
-                    repo = Repo.init(repo_path)
-
-                    if init_commit:
-                        # Create README.md
-                        readme_path = repo_path / "README.md"
-                        readme_path.write_text(
-                            f"# {repo_name}\n\nCreated on {datetime.now().isoformat()}"
-                        )
-
-                        # Initial commit
-                        repo.index.add(["README.md"])
-                        repo.index.commit("Initial commit")
-
-                    if remote_url:
-                        repo.create_remote("origin", remote_url)
-
-                    return [
-                        TextContent(
-                            type="text",
-                            text=json.dumps(
-                                {
-                                    "status": "success",
-                                    "message": f"Repository '{repo_name}' created successfully",
-                                    "path": str(repo_path.absolute()),
-                                    "has_initial_commit": init_commit,
-                                    "remote_url": remote_url,
-                                },
-                                indent=2,
-                            ),
                         )
                     ]
 

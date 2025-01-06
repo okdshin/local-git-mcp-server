@@ -2,13 +2,14 @@ import json
 import logging
 import re
 from datetime import datetime
-from typing import Any
 from pathlib import Path
+from typing import Any
+
 from git import Repo
 from git.exc import GitCommandError
-from pydantic import AnyUrl
 from mcp.server import Server
-from mcp.types import Resource, Tool, TextContent, ImageContent, EmbeddedResource
+from mcp.types import EmbeddedResource, ImageContent, Resource, TextContent, Tool
+from pydantic import AnyUrl
 
 # ログの準備
 logging.basicConfig(level=logging.INFO)
@@ -25,49 +26,66 @@ class GitServer:
     def _validate_repo_name(self, repo_name: str) -> None:
         """
         リポジトリ名のバリデーションを行う
-        
+
         Args:
             repo_name (str): 検証するリポジトリ名
-            
+
         Raises:
             ValueError: リポジトリ名が無効な場合
         """
         if not repo_name:
             raise ValueError("Repository name cannot be empty")
-            
+
         # 長さの制限（一般的なファイルシステムの制限を考慮）
         if len(repo_name) > 255:
             raise ValueError("Repository name is too long (max 255 characters)")
-            
+
         # 基本的な文字のバリデーション
-        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9-_.]*$', repo_name):
-            raise ValueError("Repository name must start with alphanumeric character and can only contain alphanumeric characters, hyphens, underscores, and dots")
-            
+        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9-_.]*$", repo_name):
+            raise ValueError(
+                "Repository name must start with alphanumeric character and can only contain alphanumeric characters, hyphens, underscores, and dots"
+            )
+
         # 危険な文字列のチェック
-        forbidden_patterns = ['..', '//', '\\\\', '.git', '.lock']
+        forbidden_patterns = ["..", "//", "\\\\", ".git", ".lock"]
         if any(pattern in repo_name for pattern in forbidden_patterns):
             raise ValueError(f"Repository name contains forbidden pattern: {repo_name}")
-            
+
         # 予約された名前のチェック
-        reserved_names = ['git', 'temp', 'tmp', 'aux', 'con', 'prn', 'nul', 'com1', 'com2', 'com3', 'com4', 'lpt1', 'lpt2', 'lpt3']
+        reserved_names = [
+            "git",
+            "temp",
+            "tmp",
+            "aux",
+            "con",
+            "prn",
+            "nul",
+            "com1",
+            "com2",
+            "com3",
+            "com4",
+            "lpt1",
+            "lpt2",
+            "lpt3",
+        ]
         if repo_name.lower() in reserved_names:
             raise ValueError(f"Repository name '{repo_name}' is reserved and cannot be used")
-            
+
         # パスインジェクション対策
         repo_path = Path(repo_name)
-        if '..' in repo_path.parts or '/' in repo_name or '\\' in repo_name:
+        if ".." in repo_path.parts or "/" in repo_name or "\\" in repo_name:
             raise ValueError("Repository name cannot contain path traversal characters")
 
     def _check_repository_exists(self, repo_name: str) -> Path:
         """
         リポジトリの存在確認を行う
-        
+
         Args:
             repo_name (str): 確認するリポジトリ名
-            
+
         Returns:
             Path: リポジトリのパス
-            
+
         Raises:
             ValueError: リポジトリが存在しない場合
         """
@@ -121,8 +139,7 @@ class GitServer:
                             "date": repo.head.commit.committed_datetime.isoformat(),
                         },
                         "remotes": [
-                            {"name": remote.name, "url": remote.url}
-                            for remote in repo.remotes
+                            {"name": remote.name, "url": remote.url} for remote in repo.remotes
                         ],
                     },
                     indent=2,
@@ -166,11 +183,11 @@ class GitServer:
                             "files": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "List of files to add"
-                            }
+                                "description": "List of files to add",
+                            },
                         },
-                        "required": ["repo_name", "files"]
-                    }
+                        "required": ["repo_name", "files"],
+                    },
                 ),
                 Tool(
                     name="git_commit",
@@ -179,10 +196,10 @@ class GitServer:
                         "type": "object",
                         "properties": {
                             "repo_name": {"type": "string", "description": "Repository name"},
-                            "message": {"type": "string", "description": "Commit message"}
+                            "message": {"type": "string", "description": "Commit message"},
                         },
-                        "required": ["repo_name", "message"]
-                    }
+                        "required": ["repo_name", "message"],
+                    },
                 ),
                 Tool(
                     name="git_pull",
@@ -194,16 +211,16 @@ class GitServer:
                             "remote": {
                                 "type": "string",
                                 "description": "Remote name",
-                                "default": "origin"
+                                "default": "origin",
                             },
                             "branch": {
                                 "type": "string",
                                 "description": "Branch name",
-                                "default": "main"
-                            }
+                                "default": "main",
+                            },
                         },
-                        "required": ["repo_name"]
-                    }
+                        "required": ["repo_name"],
+                    },
                 ),
                 Tool(
                     name="git_push",
@@ -215,16 +232,16 @@ class GitServer:
                             "remote": {
                                 "type": "string",
                                 "description": "Remote name",
-                                "default": "origin"
+                                "default": "origin",
                             },
                             "branch": {
                                 "type": "string",
                                 "description": "Branch name",
-                                "default": "main"
-                            }
+                                "default": "main",
+                            },
                         },
-                        "required": ["repo_name"]
-                    }
+                        "required": ["repo_name"],
+                    },
                 ),
                 Tool(
                     name="git_diff",
@@ -234,15 +251,18 @@ class GitServer:
                         "properties": {
                             "repo_name": {"type": "string", "description": "Repository name"},
                             "commit1": {
-                                "type": "string", 
+                                "type": "string",
                                 "description": "First commit hash (optional, default is HEAD)",
-                                "default": "HEAD"
+                                "default": "HEAD",
                             },
-                            "commit2": {"type": "string", "description": "Second commit hash (optional)"}
+                            "commit2": {
+                                "type": "string",
+                                "description": "Second commit hash (optional)",
+                            },
                         },
-                        "required": ["repo_name"]
-                    }
-                )
+                        "required": ["repo_name"],
+                    },
+                ),
             ]
 
         @self.app.call_tool()
@@ -253,11 +273,11 @@ class GitServer:
                 if name == "create_repository":
                     if not isinstance(arguments, dict) or "name" not in arguments:
                         raise ValueError("Invalid repository creation arguments")
-                    
+
                     repo_name = arguments["name"]
                     self._validate_repo_name(repo_name)
                     repo_path = self.repositories_dir / repo_name
-                    
+
                     if repo_path.exists():
                         raise ValueError(f"Repository already exists: {repo_name}")
 
@@ -312,10 +332,10 @@ class GitServer:
                                 {
                                     "status": "success",
                                     "message": f"Added files to staging area: {', '.join(files)}",
-                                    "repo": repo_name
+                                    "repo": repo_name,
                                 },
-                                indent=2
-                            )
+                                indent=2,
+                            ),
                         )
                     ]
 
@@ -331,10 +351,10 @@ class GitServer:
                                     "message": "Commit created successfully",
                                     "commit_hash": str(commit),
                                     "commit_message": message,
-                                    "repo": repo_name
+                                    "repo": repo_name,
                                 },
-                                indent=2
-                            )
+                                indent=2,
+                            ),
                         )
                     ]
 
@@ -350,10 +370,10 @@ class GitServer:
                                 {
                                     "status": "success",
                                     "message": f"Pulled changes from {remote}/{branch}",
-                                    "repo": repo_name
+                                    "repo": repo_name,
                                 },
-                                indent=2
-                            )
+                                indent=2,
+                            ),
                         )
                     ]
 
@@ -369,10 +389,10 @@ class GitServer:
                                 {
                                     "status": "success",
                                     "message": f"Pushed changes to {remote}/{branch}",
-                                    "repo": repo_name
+                                    "repo": repo_name,
                                 },
-                                indent=2
-                            )
+                                indent=2,
+                            ),
                         )
                     ]
 
@@ -388,12 +408,8 @@ class GitServer:
                         diff_result = repo.git.diff(commit1)
 
                     return [
-                        TextContent(
-                            type="text",
-                            text=json.dumps({"diff": diff_result}, indent=2)
-                        )
+                        TextContent(type="text", text=json.dumps({"diff": diff_result}, indent=2))
                     ]
-
 
                 else:
                     raise ValueError(f"Unknown tool: {name}")
@@ -409,9 +425,7 @@ class GitServer:
         from mcp.server.stdio import stdio_server
 
         async with stdio_server() as (read_stream, write_stream):
-            await self.app.run(
-                read_stream, write_stream, self.app.create_initialization_options()
-            )
+            await self.app.run(read_stream, write_stream, self.app.create_initialization_options())
 
 
 async def main():
@@ -432,4 +446,5 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

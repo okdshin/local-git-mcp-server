@@ -227,6 +227,23 @@ class GitServer:
                     }
                 )
             ]
+                Tool(
+                    name="git_diff",
+                    description="Show differences between commits, commit and working tree, etc.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "repo_name": {"type": "string", "description": "Repository name"},
+                            "commit1": {
+                                "type": "string", 
+                                "description": "First commit hash (optional, default is HEAD)",
+                                "default": "HEAD"
+                            },
+                            "commit2": {"type": "string", "description": "Second commit hash (optional)"}
+                        },
+                        "required": ["repo_name"]
+                    }
+                )
 
         @self.app.call_tool()
         async def call_tool(
@@ -358,6 +375,25 @@ class GitServer:
                             )
                         )
                     ]
+
+                elif name == "git_diff":
+                    commit1 = arguments.get("commit1", "HEAD")
+                    commit2 = arguments.get("commit2")
+
+                    # diffコマンドの実行
+                    if commit2:
+                        diff_result = repo.git.diff(commit1, commit2)
+                    else:
+                        # コミット済みの変更とワーキングツリーの差分を表示
+                        diff_result = repo.git.diff(commit1)
+
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps({"diff": diff_result}, indent=2)
+                        )
+                    ]
+
 
                 else:
                     raise ValueError(f"Unknown tool: {name}")

@@ -1,64 +1,34 @@
 # Local Git MCP Server
 
-MCPプロトコルを使用してローカルGitリポジトリを管理するサーバーです。
+## Overview
+A Python-based Git repository management server using the MCP (Message-based Communication Protocol) server framework.
 
-## 機能
+## Features
+- Create, manage, and interact with local Git repositories
+- Validate repository names
+- Perform Git operations:
+  - Repository creation
+  - Adding files
+  - Committing changes
+  - Pulling and pushing
+  - Diff generation
 
-- ローカルGitリポジトリの作成
-- リポジトリ一覧の取得
-- リポジトリ詳細情報の取得（ブランチ、最新コミット、リモート情報など）
-- リモートリポジトリの設定
+## Dependencies
+- GitPython
+- Pydantic
+- MCP Server
+- Black (code formatting)
+- isort (import sorting)
 
-## インストール
-
-1. 依存パッケージのインストール:
+## Usage
+Run the server with:
 ```bash
-pip install -r requirements.txt
+python git_server.py [--repositories-dir ./repositories]
 ```
 
-## 使い方
+## Development
+- Code is automatically formatted using Black and isort
+- GitHub Actions workflow for code formatting
 
-1. サーバーの起動:
-```bash
-# デフォルトのリポジトリディレクトリを使用
-python git_server.py
-
-# カスタムディレクトリを指定
-python git_server.py --repositories-dir /path/to/repos
-```
-
-2. 新しいリポジトリの作成:
-```json
-{
-    "name": "my-project",
-    "init_commit": true,
-    "remote_url": "https://github.com/username/my-project.git"
-}
-```
-
-3. リポジトリ情報の取得:
-- URI形式: `git://リポジトリ名`
-- 返り値の例:
-```json
-{
-    "name": "my-project",
-    "active_branch": "main",
-    "last_commit": {
-        "hash": "abc123...",
-        "message": "Initial commit",
-        "author": "User Name",
-        "date": "2025-01-06T12:00:00+00:00"
-    },
-    "remotes": [
-        {
-            "name": "origin",
-            "url": "https://github.com/username/my-project.git"
-        }
-    ]
-}
-```
-
-## エラー処理
-
-- リポジトリ作成に失敗した場合、作成されたディレクトリは自動的に削除されます
-- エラーは適切にログ記録され、クライアントに通知されます
+## License
+[ADD LICENSE INFORMATION IF APPLICABLE]
